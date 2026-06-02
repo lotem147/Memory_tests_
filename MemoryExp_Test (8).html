@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ניסוי זיכרון</title>
+    <style>
+        /* Increased global font sizes and widened container to reduce empty borders */
+        body { font-family: Arial, sans-serif; background-color: #808080; color: #f5f5f5; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; text-align: center; overflow-y: auto; overflow-x: hidden; font-size: 1.6rem; line-height: 1.6; padding: 20px 0; }
+        .container { width: 95%; max-width: 950px; background: #808080; padding: 15px; margin: auto; position: relative; }
+        h1 { font-size: 3rem; font-weight: bold; margin-bottom: 15px; }
+        
+        input[type="tel"], input[type="text"], input[type="number"] { font-size: 1.6rem; padding: 10px; margin: 5px 0 10px 0; width: 280px; text-align: center; }
+        button { background-color: #4CAF50; color: white; border: none; padding: 12px 24px; font-size: 1.4rem; cursor: pointer; border-radius: 5px; margin: 10px; }
+        button:hover { opacity: 0.9; }
+        .btn-finish { background-color: #e74c3c; margin-top: 15px; }
+        
+        .confidence-container { margin: 15px 0; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 1.4rem; }
+        .conf-btn { background-color: #667eea; width: 55px; height: 55px; border-radius: 5px; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 1.4rem; margin: 0 5px; }
+        .conf-btn.selected { background-color: #2196F3; border: 3px solid white; }
+        
+        .word-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 20px; }
+        .rec-word { background: white; color: black; padding: 15px; cursor: pointer; border-radius: 5px; font-weight: bold; font-size: 1.6rem; }
+        .rec-word.selected { background-color: #2196F3; color: white; }
+        
+        /* The scroller for the inputted recall words */
+        .listbox { background: white; color: black; height: 200px; overflow-y: auto; margin-top: 10px; border-radius: 5px; text-align: right; padding: 15px; font-size: 1.4rem; border: 2px solid #ccc; }
+        
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .modal-box { background: white; color: black; padding: 30px; border-radius: 12px; text-align: center; max-width: 450px; font-size: 1.4rem; }
+        .modal-box p { margin-bottom: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="app" class="container"></div>
+
+    <script>
+        // --- DICTIONARY ---
+        // Words 0-19 are Negative, Words 20-39 are Neutral
+        const LIST_A = ['ירי', 'אובדן', 'אסון', 'גופה', 'בגידה', 'פיגוע', 'התאבדות', 'רצח', 'חטיפה', 'אונס', 'קבר', 'אזעקה', 'קורבן', 'פצוע', 'טביעה', 'מלחמה', 'דקירה', 'מוות', 'השמדה', 'נטישה', 'שולחן', 'דלת', 'אמבטיה', 'עלה', 'חנות', 'כפתור', 'מעלית', 'כוס', 'כפית', 'סרגל', 'ארטישוק', 'גג', 'בניין', 'עיפרון', 'בקבוק', 'שביל', 'מגבת', 'מגרש', 'מנורה', 'ציפור'];
+        const LIST_B = ['תאונה', 'חרם', 'עונש', 'הפצצה', 'סיוט', 'שכול', 'ייאוש', 'התנקשות', 'אלימות', 'שיתוק', 'חטא', 'הרעבה', 'אכזריות', 'טראומה', 'כישלון', 'סכסוך', 'מעצר', 'התמוטטות', 'שוד', 'שריפה', 'מדבר', 'קופסה', 'משרד', 'מפה', 'סוללה', 'חוף', 'מכתב', 'עץ', 'ירח', 'מיטה', 'שמיכה', 'מפתח', 'נעל', 'ילקוט', 'מסך', 'אפרסק', 'מדף', 'מחברת', 'אגם', 'שקית'];
+        const SPELLING_VARIANTS = { 'עפרון': 'עפרון', 'עיפרון': 'עפרון', 'אובדן': 'אובדן', 'אבדן': 'אובדן', 'התאבדות': 'התאבדות', 'היתאבדות': 'התאבדות', 'אמבטיה': 'אמבטיה', 'אמבטייה': 'אמבטיה', 'מות': 'מוות', 'מוות': 'מוות', 'פגוע': 'פיגוע', 'פיגוע': 'פיגוע', 'מגרש': 'מגרש', 'מיגרש': 'מגרש', 'בניין': 'בניין', 'בנין': 'בניין' };
+
+        // --- DATABASE CONFIG ---
+        const GOOGLE_FORM_ID = "1FAIpQLSd9VPVccvCPYgJVKSCTvatd9Opf7sgg3oQy3JRkBIs66jP5FA"; 
+        
+        const ENTRY_IDs = {
+            pid: "entry.283460585",               
+            attempt: "entry.714217138",             
+            
+            recallInputCount: "entry.736142655",  
+            recallWords: "entry.847201116",       
+            recallConfidence: "entry.2078050078",          
+            recallHitrate: "entry.621353118",  // hit rate count
+            recallFalsepositive: "entry.1445224854",   
+            recallAccuracy: "entry.1905721798",  // total hit rate minus total false positive rate      
+            recallNegHitrate: "entry.414527251",  // hit rate of negative words
+            recallNeutHitrate: "entry.1103131618", // hit rate of neutral words       
+            
+            recogWords: "entry.349909802",      
+            recogHitrate: "entry.1998721570", 
+            recogFalsepositive: "entry.192670600",    
+            recogAccuracy: "entry.619603041",  // total hit rate minus total false positive rate    
+            recogNegHitrate: "entry.1787202384",  // hit rate of negative words
+            recogNegFP: "entry.1309941411",  // false positive rate of negative words
+            recogNegAccuracy: "entry.755182735",  // total hit rate of negative words minus false positive rate of negative words
+            recogNeutHitrate: "entry.1580778810",  // hit rate of neutral words
+            recogNeutFP: "entry.767700222",  // false positive rate of neutral words
+            recogNeutAccuracy: "entry.1228821003" // total hit rate of neutral words minus false positive rate of neutral words
+        };
+
+        // --- EXPERIMENT CONFIG ---
+        const MAX_REPETITIONS = 8;
+        const REPETITION_THRESHOLD = 40; 
+        const MAX_WORDS_RECALL = 40; 
+
+        let currentParticipant = null;
+        let attemptNumber = 1;
+        let recalledData = [];
+        let recognitionSelectedWords = [];
+        let selectedConfidence = 0;
+        let recognitionBatches = [];
+        let currentRecognitionScreen = 0;
+        let recallStart, recallEnd, recogStart, recogEnd;
+
+        const app = document.getElementById('app');
+        function render(html) { app.innerHTML = html; }
+
+        function showModal(message, isConfirm = false, onConfirm = null) {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            const buttonsHtml = isConfirm ? `<button style="background:#4CAF50" id="mC">המשך</button><button style="background:#e74c3c" id="mX">ביטול</button>` : `<button style="background:#4CAF50" id="mC">סגור</button>`;
+            overlay.innerHTML = `<div class="modal-box"><p>${message}</p><div style="display:flex;justify-content:center;gap:15px;">${buttonsHtml}</div></div>`;
+            document.body.appendChild(overlay);
+            document.getElementById('mC').onclick = () => { overlay.remove(); if(onConfirm) onConfirm(); };
+            if(isConfirm) document.getElementById('mX').onclick = () => overlay.remove();
+        }
+
+        function tryOpenFullscreen() {
+            try {
+                const elem = document.documentElement;
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen().catch(err => { console.log("Fullscreen blocked/cancelled"); });
+                } else if (elem.webkitRequestFullscreen) {
+                    elem.webkitRequestFullscreen();
+                }
+            } catch (e) { console.log("Fullscreen API not supported"); }
+        }
+
+        // --- PHASE 1: LOGIN ---
+        function showLogin() {
+            render(`
+                <h1>ניסוי זיכרון</h1>
+                <p>אנא הזינו מספר משתתף (מספר טלפון נייד שהזנתם בשלב למידת המילים):</p>
+                <input type="text" id="pidInput" placeholder="לדוגמה: 0501234567" maxlength="10">
+                <br>
+                <button onclick="validateLogin()">לחצו כאן להמשך</button>
+            `);
+        }
+
+        function validateLogin() {
+            const pidInput = document.getElementById('pidInput').value.trim();
+            
+            if (!pidInput) { 
+                showModal("יש להזין מספר משתתף."); 
+                return; 
+            }
+
+            // --- STRICT 10-DIGIT VALIDATION ---
+            if (!/^\d{10}$/.test(pidInput)) {
+                showModal("אנא הזינו מספר טלפון תקין (10 ספרות בדיוק, ללא רווחים או תווים מיוחדים).");
+                return;
+            }
+
+            tryOpenFullscreen();
+
+            currentParticipant = pidInput;
+            const userBlockedKey = `user_${currentParticipant}_blocked`;
+            const userAttemptKey = `user_${currentParticipant}_attempt`;
+            const isBlocked = localStorage.getItem(userBlockedKey) === 'true';
+            attemptNumber = parseInt(localStorage.getItem(userAttemptKey)) || 1;
+
+            if (isBlocked) {
+                render(`
+                    <h1>ניסוי זיכרון</h1>
+                    <div style="border:2px solid #e74c3c; padding:20px; border-radius:15px;">
+                        <p style="font-weight:bold; color:#ff6b6b">נראה שכבר ביצעתם את השלב הזה בעבר ואין אפשרות לבצע אותו שוב</p>
+                        <p>תודה על ההשתתפות.</p>
+                        <button style="background-color: #555;" onclick="window.close()">יציאה</button>
+                    </div>
+                `);
+                return;
+            }
+
+            if (attemptNumber > MAX_REPETITIONS) {
+                render(`
+                    <h1>ניסוי זיכרון</h1>
+                    <div style="border:2px solid #82e0aa; padding:20px; border-radius:15px;">
+                        <p style="font-weight:bold; color:#82e0aa">נראה שכבר סיימתם את כל שלבי הניסוי</p>
+                        <p>תודה רבה על השתתפותכם.</p>
+                        <button style="background-color: #555;" onclick="window.close()">יציאה</button>
+                    </div>
+                `);
+                return;
+            }
+
+            showGeneralDescription();
+        }
+
+        function showGeneralDescription() {
+            render(`
+                <div style="text-align: right; max-width: 850px; margin: 0 auto;">
+                    <h1>הנחיות לשלב מבחני זיכרון</h1>
+                    <div style="background: rgba(255,255,255,0.1); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                        <p>בחלק זה של הניסוי תתבקשו לבצע שני סוגי משימות:</p>
+                        <p>חלק א' - שליפה (Recall), וחלק ב' - זיהוי (Recognition).</p>
+                        <p style="font-weight: bold; font-size: 2rem; margin-top: 25px; color: #82e0aa; text-align: center;">זהו שלב ${attemptNumber} מתוך 8</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <button onclick="showInstructions()">המשך להוראות</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        // --- PHASE 2: RECALL ---
+        function showInstructions() {
+            render(`
+                <div style="text-align: right; max-width: 850px; margin: 0 auto;">
+                    <h1>הוראות - חלק א'</h1>
+                    <div style="background: rgba(255,255,255,0.1); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                        <p style="font-weight:bold;">בחלק זה תתבקשו להיזכר ולהקליד את המילים שלמדתם בעבר.</p>
+                        <p>יש להקליד כל מילה בנפרד (ניתן להזין עד 40 מילים).</p>
+                        <p>לאחר הקלדת המילה, דרגו את רמת הביטחון שלכם:</p>
+                        <ul style="padding-right: 25px;">
+                            <li><strong>1 = לא בטוח/ה בכלל שלמדתי את המילה</strong></li>
+                            <li><strong>6 = בטוח/ה מאוד שלמדתי את המילה</strong></li>
+                        </ul>
+                        <p>הקפידו לכתוב את המילים בצורה מדויקת. זכרו <strong>לבדוק שגיאות כתיב</strong> לפני ההוספה.</p>
+                        <p>להוספת מילה לרשימה, לחצו על כפתור <strong>'הוסף מילה'</strong>.
+                        <p>ניתן לערוך את רמת הבטחון והמילים שהוזנו באמצעות כפתור 'עריכה'.</p>
+                        <p>ניתן למחוק מילים שהוזנו באמצעות כפתור 'מחיקה'.</p>
+                        <p>כשתסיימו להיזכר (או כשתגיעו למכסת המילים), לחצו על כפתור הסיום האדום.</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <button onclick="startRecall()">התחל חלק א'</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function startRecall() { recallStart = new Date(); recalledData = []; showRecallScreen(); }
+
+        function showRecallScreen() {
+            render(`
+                <div style="position: absolute; top: 15px; left: 25px; font-size: 1.4rem; font-weight: bold;">מילים: ${recalledData.length}/${MAX_WORDS_RECALL}</div>
+                <h1 style="margin-bottom: 5px;"> היזכרות</h1>
+                <p style="margin-bottom: 5px; margin-top: 0; font-weight: bold;">הזינו מילה:</p>
+                <input type="text" id="wordInput" style="margin-top: 0;" onkeypress="if(event.key==='Enter') submitWord()">
+                <div class="confidence-container" style="margin: 10px 0;">
+                    <span>לא בטוח</span>${[1,2,3,4,5,6].map(i => `<button class="conf-btn" onclick="selectConf(${i}, this)">${i}</button>`).join('')}<span>בטוח מאוד</span>
+                </div>
+                <button style="margin-top: 5px;" onclick="submitWord()">הוסף מילה</button>
+                <div class="listbox">
+                    ${recalledData.map((d, index) => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding: 5px 0;">
+                            <span>${d.typed} (${d.conf})</span>
+                            <div style="display: flex; gap: 5px;">
+                                <button style="background: #f39c12; color: white; border: none; padding: 5px 10px; font-size: 1.1rem; border-radius: 3px; cursor: pointer; margin: 0;" onclick="editWord(${index})">עריכה</button>
+                                <button style="background: #e74c3c; color: white; border: none; padding: 5px 10px; font-size: 1.1rem; border-radius: 3px; cursor: pointer; margin: 0;" onclick="deleteWord(${index})">מחיקה</button>
+                            </div>
+                        </div>
+                    `).reverse().join('')}
+                </div>
+                <button class="btn-finish" style="margin-top: 15px; margin-bottom: 0;" onclick="finishRecall()">סיימתי - המשך</button>
+            `);
+            document.getElementById('wordInput').focus();
+        }
+
+        window.selectConf = (val, btn) => { selectedConfidence = val; document.querySelectorAll('.conf-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); };
+
+        window.submitWord = () => {
+            if (recalledData.length >= MAX_WORDS_RECALL) {
+                showModal("הגעתם למקסימום של 40 מילים. עוברים לחלק הבא.", false, finishRecall);
+                return;
+            }
+            const input = document.getElementById('wordInput');
+            let rawWord = input.value.trim();
+            
+            if (!rawWord || selectedConfidence === 0) { showModal("הזינו מילה ורמת בטחון"); return; }
+            
+            let finalWord = SPELLING_VARIANTS[rawWord] || rawWord;
+
+            let isDuplicate = recalledData.some(d => {
+                let existingTarget = d.target;
+                if (existingTarget && existingTarget === finalWord) return true;
+                if (d.typed === rawWord) return true;
+                return false;
+            });
+
+            if (isDuplicate) {
+                showModal("המילה הזו כבר קיימת ברשימה");
+                return;
+            }
+
+            recalledData.push({ typed: rawWord, target: LIST_A.includes(finalWord) ? finalWord : null, conf: selectedConfidence });
+            selectedConfidence = 0;
+            if (recalledData.length >= MAX_WORDS_RECALL) {
+                showModal("הגעתם למקסימום של 40 מילים. עוברים לחלק הבא.", false, finishRecall);
+            } else {
+                showRecallScreen();
+            }
+        };
+
+        window.deleteWord = (index) => {
+            showModal("האם ברצונך למחוק את המילה?", true, () => {
+                recalledData.splice(index, 1);
+                showRecallScreen();
+            });
+        };
+
+        window.editWord = (index) => {
+            const wordToEdit = recalledData[index];
+            recalledData.splice(index, 1); 
+            showRecallScreen();            
+            
+            const input = document.getElementById('wordInput');
+            input.value = wordToEdit.typed;
+            
+            selectedConfidence = wordToEdit.conf;
+            document.querySelectorAll('.conf-btn').forEach(b => {
+                if (parseInt(b.innerText) === selectedConfidence) {
+                    b.classList.add('selected');
+                } else {
+                    b.classList.remove('selected');
+                }
+            });
+            
+            input.focus();
+        };
+
+        function finishRecall() { 
+            if (recalledData.length < MAX_WORDS_RECALL) {
+                showModal("שימו לב - הזנתם פחות מ-40 מילים. האם אתם בטוחים שברצונכם להמשיך לחלק הבא?", true, () => {
+                    recallEnd = new Date(); 
+                    showRecognitionInstructions();
+                });
+            } else {
+                recallEnd = new Date(); 
+                showRecognitionInstructions();
+            }
+        }
+
+        // --- PHASE 3: RECOGNITION ---
+        function showRecognitionInstructions() {
+            let shuffA = [...LIST_A].sort(() => 0.5 - Math.random());
+            let shuffB = [...LIST_B].sort(() => 0.5 - Math.random());
+            recognitionBatches = [];
+            for (let i=0; i<8; i++) {
+                let batch = [...shuffA.slice(i*5,(i+1)*5), ...shuffB.slice(i*5,(i+1)*5)];
+                recognitionBatches.push(batch.sort(() => 0.5 - Math.random()));
+            }
+
+            let thresholdMsg = attemptNumber === 1 ? 
+                `<div style="margin-top: 20px; background: rgba(192, 57, 43, 0.1); border: 2px solid #c0392b; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                    <p style="color: #CB0000; font-weight: bold; margin: 0;">שימו לב: להמשך ההשתתפות במחקר נדרש דיוק של לפחות 60% בחלק זה</p>
+                 </div>` : "";
+
+            render(`
+                <div style="text-align: right; max-width: 850px; margin: 0 auto; font-weight: normal;">
+                    <h1>הוראות - חלק ב'</h1>
+                    <div style="background: rgba(255,255,255,0.1); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                        <p>כעת נעבור לחלק השני.</p>
+                        <p>בכל פעם יוצגו בפניכם <strong style="font-weight: bold;">10 מילים</strong>.</p>
+                        <p>עליכם לסמן את <strong style="font-weight: bold;">כל המילים</strong> שאתם מזהים מרשימת המילים המקורית שלמדתם.</p>
+                        <p>אין הגבלה על מספר המילים שניתן לסמן בכל מסך.</p>
+                        
+                        ${thresholdMsg}
+                        
+                        <p style="color: #ff9d00; font-weight: bold;">שימו לב - אחוז הדיוק בשלב זה מורכב מהמילים שזכרתם נכון וכן ממילים שגויות שבחרתם, לכן בחרו בקפידה רק את המילים שאתם באמת זוכרים.</p>
+                        
+                        <p style="margin-top: 25px; font-weight: normal;">לאחר סימון המילים שבחרתם, לחצו על 'המשך' למסך הבא.</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <button onclick="startRecognition()">התחל חלק ב'</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function startRecognition() { recogStart = new Date(); recognitionSelectedWords = []; showRecognitionScreen(); }
+
+        function showRecognitionScreen() {
+            const words = recognitionBatches[currentRecognitionScreen];
+            render(`<h1>זיהוי ${currentRecognitionScreen + 1}/8</h1><div class="word-grid">${words.map(w => `<div class="rec-word ${recognitionSelectedWords.includes(w)?'selected':''}" onclick="toggleWord('${w}', this)">${w}</div>`).join('')}</div><button onclick="submitRecognition()">המשך</button>`);
+        }
+
+        window.toggleWord = (word, el) => {
+            if (recognitionSelectedWords.includes(word)) { recognitionSelectedWords = recognitionSelectedWords.filter(w => w !== word); el.classList.remove('selected'); }
+            else { recognitionSelectedWords.push(word); el.classList.add('selected'); }
+        };
+
+        function submitRecognition() {
+            currentRecognitionScreen++;
+            if (currentRecognitionScreen < 8) showRecognitionScreen();
+            else { recogEnd = new Date(); processResults(); }
+        }
+
+        // --- PHASE 4: PROCESS RESULTS ---
+        function processResults() {
+            // --- Calculate Recall Metrics ---
+            const recallInputCount = recalledData.length;
+            const recallWordsStr = recalledData.map(d => d.typed).join(", ");
+            const recallConfStr = recalledData.map(d => d.conf).join(", ");
+            
+            let recallNegHitrate = 0;
+            let recallNeutHitrate = 0;
+            let recallFalsepositive = 0;
+
+            recalledData.forEach(d => {
+                if (d.target !== null) {
+                    // Index 0-19 are negative words, 20-39 are neutral
+                    if (LIST_A.indexOf(d.target) < 20) {
+                        recallNegHitrate++;
+                    } else {
+                        recallNeutHitrate++;
+                    }
+                } else {
+                    recallFalsepositive++;
+                }
+            });
+            
+            const recallHitrate = recallNegHitrate + recallNeutHitrate;
+            const recallAccuracy = recallHitrate - recallFalsepositive;
+
+            // --- Calculate Recognition Metrics ---
+            const recogWordsStr = recognitionSelectedWords.join(", ");
+            
+            let recogNegHitrate = 0;
+            let recogNeutHitrate = 0;
+            let recogNegFP = 0;
+            let recogNeutFP = 0;
+
+            recognitionSelectedWords.forEach(w => {
+                if (LIST_A.includes(w)) { // Correct Hits
+                    if (LIST_A.indexOf(w) < 20) recogNegHitrate++;
+                    else recogNeutHitrate++;
+                } else if (LIST_B.includes(w)) { // False Alarms
+                    if (LIST_B.indexOf(w) < 20) recogNegFP++;
+                    else recogNeutFP++;
+                }
+            });
+
+            const recogHitrate = recogNegHitrate + recogNeutHitrate;
+            const recogFalsepositive = recogNegFP + recogNeutFP;
+            const recogAccuracy = recogHitrate - recogFalsepositive;
+
+            const recogNegAccuracy = recogNegHitrate - recogNegFP;
+            const recogNeutAccuracy = recogNeutHitrate - recogNeutFP;
+
+            // --- PASS/FAIL THRESHOLD (Based on Total Percentages) ---
+            const recogHitratePct = Math.round((recogHitrate / 40) * 100);
+            const recogFPPct = Math.round((recogFalsepositive / 40) * 100);
+            const recogCorrectPct = Math.max(0, recogHitratePct - recogFPPct);
+            let passed = attemptNumber === 1 ? recogCorrectPct >= REPETITION_THRESHOLD : true;
+            
+            // --- BUILD SUBMISSION URL ---
+            const url = `https://docs.google.com/forms/d/e/${GOOGLE_FORM_ID}/formResponse?` +
+                        `${ENTRY_IDs.pid}=${currentParticipant}&` +
+                        `${ENTRY_IDs.attempt}=${attemptNumber}&` +
+                        
+                        // Recall Metrics
+                        `${ENTRY_IDs.recallInputCount}=${recallInputCount}&` +
+                        `${ENTRY_IDs.recallWords}=${encodeURIComponent(recallWordsStr)}&` +
+                        `${ENTRY_IDs.recallConfidence}=${encodeURIComponent(recallConfStr)}&` +
+                        `${ENTRY_IDs.recallHitrate}=${recallHitrate}&` +
+                        `${ENTRY_IDs.recallFalsepositive}=${recallFalsepositive}&` +
+                        `${ENTRY_IDs.recallAccuracy}=${recallAccuracy}&` +
+                        `${ENTRY_IDs.recallNegHitrate}=${recallNegHitrate}&` +
+                        `${ENTRY_IDs.recallNeutHitrate}=${recallNeutHitrate}&` +
+                        
+                        // Recognition Metrics
+                        `${ENTRY_IDs.recogWords}=${encodeURIComponent(recogWordsStr)}&` +
+                        `${ENTRY_IDs.recogHitrate}=${recogHitrate}&` +
+                        `${ENTRY_IDs.recogFalsepositive}=${recogFalsepositive}&` +
+                        `${ENTRY_IDs.recogAccuracy}=${recogAccuracy}&` +
+                        `${ENTRY_IDs.recogNegHitrate}=${recogNegHitrate}&` +
+                        `${ENTRY_IDs.recogNegFP}=${recogNegFP}&` +
+                        `${ENTRY_IDs.recogNegAccuracy}=${recogNegAccuracy}&` +
+                        `${ENTRY_IDs.recogNeutHitrate}=${recogNeutHitrate}&` +
+                        `${ENTRY_IDs.recogNeutFP}=${recogNeutFP}&` +
+                        `${ENTRY_IDs.recogNeutAccuracy}=${recogNeutAccuracy}&` +
+                        `submit=Submit`;
+            
+            console.log("TEST URL:", url); 
+            fetch(url, { mode: 'no-cors' });
+
+            const userBlockedKey = `user_${currentParticipant}_blocked`;
+            const userAttemptKey = `user_${currentParticipant}_attempt`;
+
+            // Debriefing text with a MAX-HEIGHT and internal SCROLLBAR (overflow-y: auto)
+            const debriefingHTML = `
+                <div style="margin-top: 15px; text-align: right; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 10px; max-width: 850px; margin-left: auto; margin-right: auto; max-height: 35vh; overflow-y: auto; border: 1px solid rgba(255,255,255,0.2); font-size: 1.4rem; line-height: 1.5;">
+                    <p style="text-align: center; font-weight: bold; font-size: 1.8rem; text-decoration: underline; margin-top: 0; margin-bottom: 15px;">על הניסוי (Debriefing)</p>
+                    <p style="margin-bottom: 15px;">מטרת המחקר הייתה לבדוק כיצד רגשות שליליים משפיעים על זכירת מילים לאורך זמן. במהלך הניסוי הוצגו מילים ניטרליות ושליליות ונבדקה היכולת לזכור אותן לאחר פרקי זמן שונים. המחקר אינו בוחן אתכם באופן אישי אלא תהליכי זיכרון כלליים.</p>
+                    <p style="margin-bottom: 15px;">ייתכן שחלק מהמילים היו בעלות תוכן שלילי (כגון "מוות" או "אסון"), אך הן נבחרו לצורכי המחקר בלבד. כל הנתונים נאספים באופן אנונימי ומנותחים בצורה קבוצתית.</p>
+                    <p style="margin-bottom: 15px;">אם חשתם אי-נוחות בעקבות ההשתתפות או ברצונכם לשאול שאלה, ניתן לפנות לכתובת: <strong style="color: #82e0aa;">Lotem91234@gmail.com</strong></p>
+                    <p style="font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 0;">תודה רבה על השתתפותכם.</p>
+                </div>
+            `;
+
+            if (!passed) {
+                localStorage.setItem(userBlockedKey, 'true');
+                render(`
+                    <h1 style="margin-bottom: 15px;">תוצאות</h1>
+                    <div style="border:2px solid #e74c3c; padding:20px; border-radius:15px;">
+                        <p style="color:#ff6b6b; font-weight:bold; margin-top:0;">רמת ההצלחה נמוכה מידי על מנת להמשיך הלאה 😔</p>
+                        ${debriefingHTML}
+                        <button style="background-color: #555; margin-bottom: 0;" onclick="window.close()">יציאה</button>
+                    </div>
+                `);
+            } else if (attemptNumber === 8) {
+                localStorage.setItem(userAttemptKey, '9');
+                render(`
+                    <h1 style="margin-bottom: 15px;">תוצאות</h1>
+                    <div style="border:2px solid #82e0aa; padding:20px; border-radius:15px;">
+                        <p style="color:#82e0aa; font-weight:bold; margin-top: 0;">סיימתם בהצלחה את מבחן הזיכרון האחרון! 🤩</p>
+                        ${debriefingHTML}
+                        <button style="background-color: #555; margin-bottom: 0;" onclick="window.close()">יציאה</button>
+                    </div>
+                `);
+            } else {
+                localStorage.setItem(userAttemptKey, attemptNumber + 1);
+                render(`
+                    <h1>תוצאות</h1>
+                    <p style="color:#82e0aa; font-weight:bold; font-size: 1.8rem; margin-bottom: 30px;">עברתם בהצלחה את שלב זה! נתראה בשלב הבא ✌️</p>
+                    <button onclick="location.reload()">סיום</button>
+                `);
+            }
+        }
+        showLogin();
+    </script>
+</body>
+</html>
